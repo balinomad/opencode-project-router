@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+
+# Local router state
+router.json
+projects/
+
+# Build and test output
+*.log
+*.tsbuildinfo
+.cache/
+coverage/
+dist/
+build/
+
+# Local environment files
+.env
+.env.*
+
+# Editor and OS files
+.DS_Store
+.directory
+.idea/
+*.swp
+*~
+
+# VS Code workspace files
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# Workspace packages use the root lockfile
+v1/package-lock.json
+v2/package-lock.json

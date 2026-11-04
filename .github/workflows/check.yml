@@ -1,0 +1,35 @@
+name: check
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev
+
+      - name: Typecheck
+        run: npm run check
+
+      - name: Check v1 plugin bundle
+        run: npx --yes esbuild v1/router.ts --bundle --platform=node --format=esm --outfile=/tmp/router-v1.js --external:@opencode-ai/plugin --external:yaml
+
+      - name: Check v2 plugin bundle
+        run: npx --yes esbuild v2/index.ts --bundle --platform=node --format=esm --outfile=/tmp/router-v2.js
