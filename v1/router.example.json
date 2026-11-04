@@ -1,0 +1,10 @@
+{
+	"version": 1,
+	"projects": "~/.config/opencode/projects",
+	"containers": ["~/repos"],
+	"permission": {
+		"edit": {
+			"~/tmp/opencode/*": "allow"
+		}
+	}
+}
