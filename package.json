@@ -1,0 +1,35 @@
+{
+	"name": "opencode-project-router-dev",
+	"private": true,
+	"type": "module",
+	"description": "Centralize per-project OpenCode configuration outside project repositories.",
+	"license": "MIT",
+	"author": "balinomad",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/balinomad/opencode-project-router.git"
+	},
+	"bugs": {
+		"url": "https://github.com/balinomad/opencode-project-router/issues"
+	},
+	"homepage": "https://github.com/balinomad/opencode-project-router#readme",
+	"keywords": [
+		"opencode",
+		"plugin",
+		"configuration",
+		"agents",
+		"skills",
+		"references"
+	],
+	"engines": {
+		"node": ">=22"
+	},
+	"workspaces": ["v1", "v2"],
+	"scripts": {
+		"check": "tsc --noEmit"
+	},
+	"devDependencies": {
+		"@types/node": "^22.0.0",
+		"typescript": "^5.9.0"
+	}
+}
