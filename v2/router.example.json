@@ -1,0 +1,6 @@
+{
+	"version": 2,
+	"projects": "~/.config/opencode/projects",
+	"containers": ["~/repos"],
+	"references": {}
+}
