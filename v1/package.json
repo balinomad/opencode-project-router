@@ -1,0 +1,30 @@
+{
+	"name": "opencode-project-router-v1",
+	"version": "1.0.0",
+	"private": true,
+	"type": "module",
+	"description": "OpenCode 1.x plugin for centralized per-project configuration.",
+	"license": "MIT",
+	"author": "balinomad",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/balinomad/opencode-project-router.git"
+	},
+	"bugs": {
+		"url": "https://github.com/balinomad/opencode-project-router/issues"
+	},
+	"homepage": "https://github.com/balinomad/opencode-project-router/tree/master/v1#readme",
+	"keywords": [
+		"opencode",
+		"plugin",
+		"configuration",
+		"agents",
+		"skills"
+	],
+	"dependencies": {
+		"yaml": "^2.9.0"
+	},
+	"devDependencies": {
+		"@opencode-ai/plugin": "1.18.29"
+	}
+}
