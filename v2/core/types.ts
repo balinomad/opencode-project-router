@@ -3,7 +3,6 @@ import type { AgentEditor } from "@opencode/plugin/promise/agent"
 import type {
 	CommandDefinition,
 	CommandEditor,
-	CommandInvocation,
 } from "@opencode/plugin/promise/command"
 import type { ReferenceEditor } from "@opencode/plugin/promise/reference"
 import type { SkillEditor } from "@opencode/plugin/promise/skill"
@@ -26,12 +25,10 @@ export type RouterManifest = {
 }
 
 export type LoadedManifest = RouterManifest & {
-	manifestPath: string
 	projectsRoot: string
 }
 
 export type ProjectMatch = {
-	name: string
 	projectDir: string
 }
 
@@ -82,7 +79,6 @@ export type {
 	AgentEditor,
 	CommandDefinition,
 	CommandEditor,
-	CommandInvocation,
 	ReferenceEditor,
 	SkillEditor,
 }
@@ -93,25 +89,3 @@ export type ModelReference = NonNullable<AgentDraft["model"]>
 export type SkillInfo = Parameters<SkillEditor["add"]>[0]
 export type ReferenceSource = Parameters<ReferenceEditor["add"]>[1]
 export type AgentId = Agent.ID
-
-export type MutableAgentDraft = {
-	name: string
-	description?: string
-	mode: "primary" | "subagent" | "all"
-	hidden: boolean
-	color?: string
-	steps?: number
-	model?: ParsedModelReference
-	request: {
-		settings: ConfigRecord
-		headers: Record<string, string>
-		body: ConfigRecord
-	}
-	permissions: PermissionRule[]
-	system?: string
-}
-
-export type SystemPart = {
-	type: "text"
-	text: string
-}

@@ -54,9 +54,6 @@ const plugin = {
 		if (majorVersion === undefined || majorVersion < 2) return
 		await activate(context)
 	},
-	async server() {
-		return {}
-	},
-} satisfies Plugin.Plugin & { server: () => Promise<Record<string, never>> }
+} satisfies Plugin.Plugin
 
 export default plugin

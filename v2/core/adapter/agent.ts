@@ -1,10 +1,11 @@
 import { parseModelReference } from "../project"
 import {
 	isRecord,
+	type AgentDraft,
 	type AgentEditor,
 	type DiagnosticSink,
 	type LoadedAgent,
-	type MutableAgentDraft,
+	type ModelReference,
 	type PermissionRule,
 } from "../types"
 
@@ -54,51 +55,49 @@ export function applyAgent(
 
 	const existingAgent = editor.get(source.id)
 	editor.update(source.id, (agent) => {
-		// OpenCode brands IDs and model fields in its types, but the editor applies plain runtime values.
-		const draft = agent as unknown as MutableAgentDraft
-
+		// Config holds plain strings; the editor types brand agent and model IDs.
 		if (typeof frontmatter.name === "string" && frontmatter.name.trim()) {
-			draft.name = frontmatter.name
+			agent.name = frontmatter.name as AgentDraft["name"]
 		}
 		if (typeof frontmatter.description === "string") {
-			draft.description = frontmatter.description
+			agent.description = frontmatter.description
 		}
 		if (source.fromModesDirectory) {
-			draft.mode = "primary"
+			agent.mode = "primary"
 		} else if (isAgentMode(frontmatter.mode)) {
-			draft.mode = frontmatter.mode
+			agent.mode = frontmatter.mode
 		}
 		if (typeof frontmatter.hidden === "boolean") {
-			draft.hidden = frontmatter.hidden
+			agent.hidden = frontmatter.hidden
 		}
 		if (typeof frontmatter.color === "string") {
-			draft.color = frontmatter.color
+			agent.color = frontmatter.color
 		}
 		if (
 			typeof frontmatter.steps === "number" &&
 			Number.isInteger(frontmatter.steps) &&
 			frontmatter.steps > 0
 		) {
-			draft.steps = frontmatter.steps
+			agent.steps = frontmatter.steps
 		}
 
 		const model = parseModelReference(frontmatter.model)
-		if (model) draft.model = model
+		if (model) agent.model = model as ModelReference
 
 		if (isRecord(frontmatter.request)) {
-			draft.request = {
+			agent.request = {
 				settings: {
-					...(isRecord(draft.request?.settings) ? draft.request.settings : {}),
+					...(isRecord(agent.request?.settings) ? agent.request.settings : {}),
 					...(isRecord(frontmatter.request.settings)
 						? frontmatter.request.settings
 						: {}),
 				},
 				headers: {
-					...(draft.request?.headers ?? {}),
+					...(agent.request?.headers ?? {}),
 					...(stringRecord(frontmatter.request.headers) ?? {}),
 				},
 				body: {
-					...(isRecord(draft.request?.body) ? draft.request.body : {}),
+					...(isRecord(agent.request?.body) ? agent.request.body : {}),
 					...(isRecord(frontmatter.request.body) ? frontmatter.request.body : {}),
 				},
 			}
@@ -107,17 +106,17 @@ export function applyAgent(
 		const permissionRules = normalizePermissionRules(frontmatter.permissions)
 		if (permissionRules) {
 			if (existingAgent) {
-				draft.permissions ??= []
-				draft.permissions.push(...permissionRules)
+				agent.permissions ??= []
+				agent.permissions.push(...permissionRules)
 			} else {
-				draft.permissions = permissionRules
+				agent.permissions = permissionRules
 			}
 		} else if (!existingAgent) {
-			draft.permissions = []
+			agent.permissions = []
 		}
 
 		const systemPrompt = source.body.trim()
-		if (systemPrompt) draft.system = systemPrompt
+		if (systemPrompt) agent.system = systemPrompt
 	})
 
 	if (frontmatter.mode !== undefined && !isAgentMode(frontmatter.mode)) {
