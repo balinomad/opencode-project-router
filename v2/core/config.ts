@@ -9,26 +9,36 @@ import {
 	type RouterManifest,
 } from "./types"
 
-export const DEFAULT_PROJECTS_ROOT = join(
-	homedir(),
-	".config",
-	"opencode",
-	"projects",
-)
-export const MANIFEST_VERSION = 2
+const XDG_CONFIG_HOME = process.env.XDG_CONFIG_HOME
+const CONFIG_HOME =
+	XDG_CONFIG_HOME && isAbsolute(XDG_CONFIG_HOME)
+		? XDG_CONFIG_HOME
+		: join(homedir(), ".config")
+const DEFAULT_PROJECTS_ROOT = join(CONFIG_HOME, "opencode", "projects")
+const MANIFEST_VERSION = 2
 
 export function isMissingFileError(error: unknown): boolean {
 	return isRecord(error) && error.code === "ENOENT"
+}
+
+function isNotDirectoryError(error: unknown): boolean {
+	return isRecord(error) && error.code === "ENOTDIR"
 }
 
 export function formatError(error: unknown): string {
 	return error instanceof Error ? error.message : String(error)
 }
 
-export async function canonicalizePath(path: string): Promise<string> {
+async function canonicalizePath(
+	path: string,
+	diagnostics: DiagnosticSink,
+): Promise<string> {
 	try {
 		return await realpath(path)
-	} catch {
+	} catch (error) {
+		if (!isMissingFileError(error) && !isNotDirectoryError(error)) {
+			diagnostics.add(`cannot resolve ${path}: ${formatError(error)}`)
+		}
 		return resolve(path)
 	}
 }
@@ -66,18 +76,42 @@ function isPathInside(parentPath: string, childPath: string): boolean {
 	)
 }
 
-function stringArray(value: unknown): string[] | undefined {
-	if (!Array.isArray(value)) return undefined
-	return value.filter((item): item is string => typeof item === "string")
+function parseStringArray(
+	value: unknown,
+	field: string,
+	diagnostics: DiagnosticSink,
+): string[] | undefined {
+	if (value === undefined) return undefined
+	if (!Array.isArray(value)) {
+		diagnostics.add(`router manifest field ${field} must be an array of strings`)
+		return undefined
+	}
+	const result: string[] = []
+	for (const item of value) {
+		if (typeof item === "string") {
+			result.push(item)
+		} else {
+			diagnostics.add(
+				`router manifest field ${field} contains a non-string entry`,
+			)
+		}
+	}
+	return result
 }
 
 export async function loadManifest(
 	manifestPath: string,
 	diagnostics: DiagnosticSink,
 ): Promise<LoadedManifest | undefined> {
-	const text = await readTextFile(manifestPath, diagnostics)
-	if (text === undefined) {
-		diagnostics.add(`router manifest not found: ${manifestPath}`)
+	let text: string
+	try {
+		text = await readFile(manifestPath, "utf8")
+	} catch (error) {
+		if (isMissingFileError(error)) {
+			diagnostics.add(`router manifest not found: ${manifestPath}`)
+		} else {
+			diagnostics.add(`cannot read ${manifestPath}: ${formatError(error)}`)
+		}
 		return undefined
 	}
 
@@ -97,7 +131,7 @@ export async function loadManifest(
 	const manifest: RouterManifest = {
 		version: typeof parsed.version === "number" ? parsed.version : undefined,
 		projects: typeof parsed.projects === "string" ? parsed.projects : undefined,
-		containers: stringArray(parsed.containers),
+		containers: parseStringArray(parsed.containers, "containers", diagnostics),
 		references: isRecord(parsed.references) ? parsed.references : undefined,
 	}
 
@@ -112,7 +146,7 @@ export async function loadManifest(
 		? resolve(dirname(manifestPath), expandHomePath(manifest.projects))
 		: DEFAULT_PROJECTS_ROOT
 
-	return { ...manifest, manifestPath, projectsRoot }
+	return { ...manifest, projectsRoot }
 }
 
 export async function resolveProject(
@@ -134,10 +168,13 @@ export async function resolveProject(
 		return undefined
 	}
 
-	const canonicalWorkingDirectory = await canonicalizePath(workingDirectory)
+	const canonicalWorkingDirectory = await canonicalizePath(
+		workingDirectory,
+		diagnostics,
+	)
 	const containerPaths = await Promise.all(
 		(manifest.containers ?? []).map((container) =>
-			canonicalizePath(expandHomePath(container)),
+			canonicalizePath(expandHomePath(container), diagnostics),
 		),
 	)
 
@@ -153,7 +190,6 @@ export async function resolveProject(
 
 	if (!bestMatch) return undefined
 	return {
-		name: bestMatch.name,
 		projectDir: join(manifest.projectsRoot, bestMatch.name),
 	}
 }
