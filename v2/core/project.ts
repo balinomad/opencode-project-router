@@ -90,10 +90,7 @@ function parseCommandArguments(input: string): string[] {
 
 export function expandCommandTemplate(template: string, input: string): string {
 	const value = input.trim()
-	let result = template
-	if (result.includes("$ARGUMENTS")) {
-		result = result.replaceAll("$ARGUMENTS", () => value)
-	}
+	let result = template.replaceAll("$ARGUMENTS", () => value)
 	const args = parseCommandArguments(value)
 	result = result.replace(
 		/\$(\d+)/g,
@@ -194,6 +191,77 @@ async function loadReferences(
 	return {}
 }
 
+type ProjectFileKind = "agent" | "mode" | "command" | "nestedSkill" | "flatSkill"
+
+const PROJECT_FILE_PATTERNS: ReadonlyArray<
+	readonly [ProjectFileKind, RegExp]
+> = [
+	["agent", /^agents?\/.+\.md$/],
+	["mode", /^modes?\/[^/]+\.md$/],
+	["command", /^commands?\/.+\.md$/],
+	["nestedSkill", /^skills?\/.+\/SKILL\.md$/],
+	["flatSkill", /^skills?\/[^/]+\.md$/],
+]
+
+function classifyProjectFile(relativePath: string): ProjectFileKind | undefined {
+	for (const [kind, pattern] of PROJECT_FILE_PATTERNS) {
+		if (pattern.test(relativePath)) return kind
+	}
+	return undefined
+}
+
+type ProjectFile = {
+	kind: ProjectFileKind
+	filePath: string
+	relativePath: string
+	fileText: string
+}
+
+function addProjectFile(
+	project: Pick<LoadedProject, "agents" | "commands" | "skills">,
+	file: ProjectFile,
+	diagnostics: DiagnosticSink,
+): void {
+	const { kind, filePath, relativePath, fileText } = file
+	if (kind === "command") {
+		const { frontmatter, body } = parseMarkdownDocument(
+			fileText,
+			filePath,
+			diagnostics,
+		)
+		project.commands.push({
+			name: stripPrefixAndExtension(relativePath, ["command/", "commands/"]),
+			frontmatter,
+			template: body.trim(),
+		})
+		return
+	}
+
+	if (kind === "agent" || kind === "mode") {
+		const { frontmatter, body } = parseMarkdownDocument(
+			fileText,
+			filePath,
+			diagnostics,
+		)
+		project.agents.push({
+			id: stripPrefixAndExtension(
+				relativePath,
+				kind === "mode" ? ["mode/", "modes/"] : ["agent/", "agents/"],
+			),
+			fromModesDirectory: kind === "mode",
+			frontmatter,
+			body,
+		})
+		return
+	}
+
+	const skillId =
+		kind === "nestedSkill"
+			? basename(dirname(filePath))
+			: stripFileExtension(basename(filePath))
+	project.skills.push(parseSkill(skillId, filePath, fileText, diagnostics))
+}
+
 export async function loadProject(
 	projectDir: string,
 	diagnostics: DiagnosticSink,
@@ -203,92 +271,29 @@ export async function loadProject(
 		undefined
 	const opencodeDir = join(projectDir, ".opencode")
 	const files = await collectFiles(opencodeDir, diagnostics)
-	const agents: LoadedAgent[] = []
-	const commands: LoadedCommand[] = []
-	const skills: LoadedSkill[] = []
+	const collections = {
+		agents: [] as LoadedAgent[],
+		commands: [] as LoadedCommand[],
+		skills: [] as LoadedSkill[],
+	}
 
 	for (const filePath of files) {
 		const relativePath = relative(opencodeDir, filePath).split("\\").join("/")
-		const isAgentFile = /^agents?\/.+\.md$/.test(relativePath)
-		const isModeFile = /^modes?\/[^/]+\.md$/.test(relativePath)
-		const isCommandFile = /^commands?\/.+\.md$/.test(relativePath)
-		const isNestedSkillFile = /^skills?\/.+\/SKILL\.md$/.test(relativePath)
-		const isFlatSkillFile = /^skills?\/[^/]+\.md$/.test(relativePath)
-		if (
-			!isAgentFile &&
-			!isModeFile &&
-			!isCommandFile &&
-			!isNestedSkillFile &&
-			!isFlatSkillFile
-		) {
-			continue
-		}
-
+		const kind = classifyProjectFile(relativePath)
+		if (!kind) continue
 		const fileText = await readTextFile(filePath, diagnostics)
 		if (fileText === undefined) continue
-
-		if (isAgentFile) {
-			const { frontmatter, body } = parseMarkdownDocument(
-				fileText,
-				filePath,
-				diagnostics,
-			)
-			agents.push({
-				id: stripPrefixAndExtension(relativePath, ["agent/", "agents/"]),
-				fromModesDirectory: false,
-				frontmatter,
-				body,
-			})
-		} else if (isModeFile) {
-			const { frontmatter, body } = parseMarkdownDocument(
-				fileText,
-				filePath,
-				diagnostics,
-			)
-			agents.push({
-				id: stripPrefixAndExtension(relativePath, ["mode/", "modes/"]),
-				fromModesDirectory: true,
-				frontmatter,
-				body,
-			})
-		} else if (isCommandFile) {
-			const { frontmatter, body } = parseMarkdownDocument(
-				fileText,
-				filePath,
-				diagnostics,
-			)
-			commands.push({
-				name: stripPrefixAndExtension(relativePath, ["command/", "commands/"]),
-				frontmatter,
-				template: body.trim(),
-			})
-		} else if (isNestedSkillFile) {
-			skills.push(
-				parseSkill(
-					basename(dirname(filePath)),
-					filePath,
-					fileText,
-					diagnostics,
-				),
-			)
-		} else if (isFlatSkillFile) {
-			skills.push(
-				parseSkill(
-					stripFileExtension(basename(filePath)),
-					filePath,
-					fileText,
-					diagnostics,
-				),
-			)
-		}
+		addProjectFile(
+			collections,
+			{ kind, filePath, relativePath, fileText },
+			diagnostics,
+		)
 	}
 
 	return {
 		projectDir,
 		...(agentsText !== undefined ? { agentsText } : {}),
-		agents,
-		commands,
-		skills,
+		...collections,
 		references: await loadReferences(projectDir, diagnostics),
 	}
 }
