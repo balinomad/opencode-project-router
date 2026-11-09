@@ -1,17 +1,18 @@
 import type { Config, Hooks, PluginInput, PluginModule } from "@opencode-ai/plugin"
-import { readFile, readdir, realpath } from "node:fs/promises"
+import { constants } from "node:fs"
+import { access, readFile, readdir, realpath, stat } from "node:fs/promises"
 import { homedir } from "node:os"
 import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { parse as parseYaml } from "yaml"
 
 const MANIFEST_PATH = fileURLToPath(new URL("router.json", import.meta.url))
-const DEFAULT_PROJECTS_ROOT = join(
-	homedir(),
-	".config",
-	"opencode",
-	"projects",
-)
+const XDG_CONFIG_HOME = process.env.XDG_CONFIG_HOME
+const CONFIG_HOME =
+	XDG_CONFIG_HOME && isAbsolute(XDG_CONFIG_HOME)
+		? XDG_CONFIG_HOME
+		: join(homedir(), ".config")
+const DEFAULT_PROJECTS_ROOT = join(CONFIG_HOME, "opencode", "projects")
 const MANIFEST_VERSION = 1
 
 type ConfigRecord = Record<string, unknown>
@@ -24,7 +25,6 @@ type RouterManifest = {
 }
 
 type LoadedManifest = RouterManifest & {
-	manifestPath: string
 	projectsRoot: string
 }
 
@@ -33,7 +33,6 @@ type DiagnosticSink = {
 }
 
 type ProjectMatch = {
-	name: string
 	projectDir: string
 }
 
@@ -74,8 +73,35 @@ function isMissingFileError(error: unknown): boolean {
 	return isRecord(error) && error.code === "ENOENT"
 }
 
+function isNotDirectoryError(error: unknown): boolean {
+	return isRecord(error) && error.code === "ENOTDIR"
+}
+
 function formatError(error: unknown): string {
 	return error instanceof Error ? error.message : String(error)
+}
+
+function parseStringArray(
+	value: unknown,
+	field: string,
+	diagnostics: DiagnosticSink,
+): string[] | undefined {
+	if (value === undefined) return undefined
+	if (!Array.isArray(value)) {
+		diagnostics.add(`router manifest field ${field} must be an array of strings`)
+		return undefined
+	}
+	const result: string[] = []
+	for (const item of value) {
+		if (typeof item === "string") {
+			result.push(item)
+		} else {
+			diagnostics.add(
+				`router manifest field ${field} contains a non-string entry`,
+			)
+		}
+	}
+	return result
 }
 
 function expandHomePath(path: string): string {
@@ -84,10 +110,16 @@ function expandHomePath(path: string): string {
 		.replace(/\$\{?HOME\}?/g, homedir())
 }
 
-async function canonicalizePath(path: string): Promise<string> {
+async function canonicalizePath(
+	path: string,
+	diagnostics: DiagnosticSink,
+): Promise<string> {
 	try {
 		return await realpath(path)
-	} catch {
+	} catch (error) {
+		if (!isMissingFileError(error) && !isNotDirectoryError(error)) {
+			diagnostics.add(`cannot resolve ${path}: ${formatError(error)}`)
+		}
 		return resolve(path)
 	}
 }
@@ -114,12 +146,53 @@ async function readTextFile(
 	}
 }
 
+async function fileExists(
+	path: string,
+	diagnostics: DiagnosticSink,
+): Promise<boolean> {
+	try {
+		const info = await stat(path)
+		if (!info.isFile()) {
+			diagnostics.add(`cannot read ${path}: not a regular file`)
+			return false
+		}
+		await access(path, constants.R_OK)
+		return true
+	} catch (error) {
+		if (!isMissingFileError(error)) {
+			diagnostics.add(`cannot read ${path}: ${formatError(error)}`)
+		}
+		return false
+	}
+}
+
+function skipComment(text: string, index: number): number | undefined {
+	if (text[index] !== "/") return undefined
+	const next = text[index + 1]
+	if (next === "/") {
+		let position = index
+		while (position < text.length && text[position] !== "\n") position++
+		return position
+	}
+	if (next === "*") {
+		let position = index + 2
+		while (
+			position < text.length &&
+			!(text[position] === "*" && text[position + 1] === "/")
+		) {
+			position++
+		}
+		return position + 2
+	}
+	return undefined
+}
+
 function parseJsonc(
 	text: string,
 	path: string,
 	diagnostics: DiagnosticSink,
 ): ConfigRecord | undefined {
-	let output = ""
+	const output: string[] = []
 	let inString = false
 	let index = 0
 
@@ -127,7 +200,6 @@ function parseJsonc(
 		let position = from
 		while (position < text.length) {
 			const current = text[position]
-			const next = text[position + 1]
 			if (
 				current === " " ||
 				current === "\t" ||
@@ -137,19 +209,9 @@ function parseJsonc(
 				position++
 				continue
 			}
-			if (current === "/" && next === "/") {
-				while (position < text.length && text[position] !== "\n") position++
-				continue
-			}
-			if (current === "/" && next === "*") {
-				position += 2
-				while (
-					position < text.length &&
-					!(text[position] === "*" && text[position + 1] === "/")
-				) {
-					position++
-				}
-				position += 2
+			const commentEnd = skipComment(text, position)
+			if (commentEnd !== undefined) {
+				position = commentEnd
 				continue
 			}
 			return current
@@ -161,9 +223,9 @@ function parseJsonc(
 		const current = text[index]
 		const next = text[index + 1]
 		if (inString) {
-			output += current
+			output.push(current)
 			if (current === "\\") {
-				output += next ?? ""
+				output.push(next ?? "")
 				index += 2
 				continue
 			}
@@ -173,23 +235,13 @@ function parseJsonc(
 		}
 		if (current === '"') {
 			inString = true
-			output += current
+			output.push(current)
 			index++
 			continue
 		}
-		if (current === "/" && next === "/") {
-			while (index < text.length && text[index] !== "\n") index++
-			continue
-		}
-		if (current === "/" && next === "*") {
-			index += 2
-			while (
-				index < text.length &&
-				!(text[index] === "*" && text[index + 1] === "/")
-			) {
-				index++
-			}
-			index += 2
+		const commentEnd = skipComment(text, index)
+		if (commentEnd !== undefined) {
+			index = commentEnd
 			continue
 		}
 		if (current === ",") {
@@ -199,12 +251,12 @@ function parseJsonc(
 				continue
 			}
 		}
-		output += current
+		output.push(current)
 		index++
 	}
 
 	try {
-		const value: unknown = JSON.parse(output)
+		const value: unknown = JSON.parse(output.join(""))
 		if (isRecord(value)) return value
 		diagnostics.add(`expected a JSON object in ${path}`)
 		return undefined
@@ -384,61 +436,64 @@ function expandExternalDirectory(config: ConfigRecord): void {
 	permission.external_directory = normalizedRules
 }
 
-async function applyProject(
+function mergeConfigFragment(
+	config: ConfigRecord,
+	fragment: ConfigRecord,
+	configDir: string,
+): void {
+	if ("instructions" in fragment) {
+		const list = Array.isArray(fragment.instructions)
+			? fragment.instructions
+			: [fragment.instructions]
+		const instructions = ensureArray(config, "instructions")
+		for (const entry of list) {
+			if (typeof entry !== "string") continue
+			instructions.push(
+				/^https?:\/\//.test(entry)
+					? entry
+					: resolve(configDir, expandHomePath(entry)),
+			)
+		}
+		delete fragment.instructions
+	}
+	for (const [key, value] of Object.entries(fragment)) {
+		config[key] = key in config ? mergeValues(config[key], value) : value
+	}
+}
+
+type OpencodeDefinition = {
+	collection: "agent" | "command"
+	prefixes: string[]
+	transform: (frontmatter: ConfigRecord, body: string) => ConfigRecord
+}
+
+async function mergeOpencodeDefinition(
+	config: ConfigRecord,
+	filePath: string,
+	relativePath: string,
+	diagnostics: DiagnosticSink,
+	definition: OpencodeDefinition,
+): Promise<void> {
+	const fileText = await readTextFile(filePath, diagnostics)
+	if (fileText === undefined) return
+	const { frontmatter, body } = parseMarkdownDocument(
+		fileText,
+		filePath,
+		diagnostics,
+	)
+	const name = stripPrefixAndExtension(relativePath, definition.prefixes)
+	const records = ensureRecord(config, definition.collection)
+	records[name] = mergeValues(
+		records[name] ?? {},
+		definition.transform(frontmatter, body.trim()),
+	)
+}
+
+async function applyOpencodeDirectory(
 	config: ConfigRecord,
 	projectDir: string,
 	diagnostics: DiagnosticSink,
-	globalPermissions?: ConfigRecord,
 ): Promise<void> {
-	if (
-		(await readTextFile(join(projectDir, "AGENTS.md"), diagnostics)) !==
-		undefined
-	) {
-		ensureArray(config, "instructions").push(join(projectDir, "AGENTS.md"))
-	}
-
-	const configFiles = [
-		join(projectDir, "opencode.json"),
-		join(projectDir, "opencode.jsonc"),
-		join(projectDir, ".opencode", "opencode.json"),
-		join(projectDir, ".opencode", "opencode.jsonc"),
-	]
-
-	for (const filePath of configFiles) {
-		const fragment = await loadConfigFile(filePath, diagnostics)
-		if (!fragment) continue
-		const configDir = dirname(filePath)
-		if ("instructions" in fragment) {
-			const list = Array.isArray(fragment.instructions)
-				? fragment.instructions
-				: [fragment.instructions]
-			const instructions = ensureArray(config, "instructions")
-			for (const entry of list) {
-				if (typeof entry !== "string") continue
-				instructions.push(
-					/^https?:\/\//.test(entry)
-						? entry
-						: resolve(configDir, expandHomePath(entry)),
-				)
-			}
-			delete fragment.instructions
-		}
-		for (const [key, value] of Object.entries(fragment)) {
-			config[key] =
-				key in config ? mergeValues(config[key], value) : value
-		}
-	}
-
-	if (globalPermissions) {
-		config.permission = mergeValues(
-			globalPermissions,
-			isRecord(config.permission) ? config.permission : {},
-		)
-	}
-
-	relativizePermissionPaths(config, projectDir)
-	expandExternalDirectory(config)
-
 	const opencodeDir = join(projectDir, ".opencode")
 	const files = await collectFiles(opencodeDir, diagnostics)
 	const skillDirectories = new Set<string>()
@@ -446,55 +501,25 @@ async function applyProject(
 	for (const filePath of files) {
 		const relativePath = relative(opencodeDir, filePath).split("\\").join("/")
 		if (/^agents?\/.+\.md$/.test(relativePath)) {
-			const fileText = await readTextFile(filePath, diagnostics)
-			if (fileText === undefined) continue
-			const { frontmatter, body } = parseMarkdownDocument(
-				fileText,
-				filePath,
-				diagnostics,
-			)
-			const agentName = stripPrefixAndExtension(relativePath, [
-				"agent/",
-				"agents/",
-			])
-			const agents = ensureRecord(config, "agent")
-			agents[agentName] = mergeValues(
-				agents[agentName] ?? {},
-				toAgent(frontmatter, body.trim()),
-			)
+			await mergeOpencodeDefinition(config, filePath, relativePath, diagnostics, {
+				collection: "agent",
+				prefixes: ["agent/", "agents/"],
+				transform: toAgent,
+			})
 		} else if (/^commands?\/.+\.md$/.test(relativePath)) {
-			const fileText = await readTextFile(filePath, diagnostics)
-			if (fileText === undefined) continue
-			const { frontmatter, body } = parseMarkdownDocument(
-				fileText,
-				filePath,
-				diagnostics,
-			)
-			const commandName = stripPrefixAndExtension(relativePath, [
-				"command/",
-				"commands/",
-			])
-			const commands = ensureRecord(config, "command")
-			commands[commandName] = mergeValues(
-				commands[commandName] ?? {},
-				toCommand(frontmatter, body.trim()),
-			)
+			await mergeOpencodeDefinition(config, filePath, relativePath, diagnostics, {
+				collection: "command",
+				prefixes: ["command/", "commands/"],
+				transform: toCommand,
+			})
 		} else if (/^modes?\/[^/]+\.md$/.test(relativePath)) {
-			const fileText = await readTextFile(filePath, diagnostics)
-			if (fileText === undefined) continue
-			const { frontmatter, body } = parseMarkdownDocument(
-				fileText,
-				filePath,
-				diagnostics,
-			)
-			const agentName = stripPrefixAndExtension(relativePath, [
-				"mode/",
-				"modes/",
-			])
-			const agents = ensureRecord(config, "agent")
-			agents[agentName] = mergeValues(agents[agentName] ?? {}, {
-				...toAgent(frontmatter, body.trim()),
-				mode: "primary",
+			await mergeOpencodeDefinition(config, filePath, relativePath, diagnostics, {
+				collection: "agent",
+				prefixes: ["mode/", "modes/"],
+				transform: (frontmatter, body) => ({
+					...toAgent(frontmatter, body),
+					mode: "primary",
+				}),
 			})
 		} else if (/^skills?\/.+\/SKILL\.md$/.test(relativePath)) {
 			skillDirectories.add(dirname(dirname(filePath)))
@@ -511,13 +536,55 @@ async function applyProject(
 	}
 }
 
+async function applyProject(
+	config: ConfigRecord,
+	projectDir: string,
+	diagnostics: DiagnosticSink,
+	globalPermissions?: ConfigRecord,
+): Promise<void> {
+	const agentsPath = join(projectDir, "AGENTS.md")
+	if (await fileExists(agentsPath, diagnostics)) {
+		ensureArray(config, "instructions").push(agentsPath)
+	}
+
+	const configFiles = [
+		join(projectDir, "opencode.json"),
+		join(projectDir, "opencode.jsonc"),
+		join(projectDir, ".opencode", "opencode.json"),
+		join(projectDir, ".opencode", "opencode.jsonc"),
+	]
+
+	for (const filePath of configFiles) {
+		const fragment = await loadConfigFile(filePath, diagnostics)
+		if (!fragment) continue
+		mergeConfigFragment(config, fragment, dirname(filePath))
+	}
+
+	if (globalPermissions) {
+		config.permission = mergeValues(
+			globalPermissions,
+			isRecord(config.permission) ? config.permission : {},
+		)
+	}
+
+	relativizePermissionPaths(config, projectDir)
+	expandExternalDirectory(config)
+	await applyOpencodeDirectory(config, projectDir, diagnostics)
+}
+
 async function loadManifest(
 	manifestPath: string,
 	diagnostics: DiagnosticSink,
 ): Promise<LoadedManifest | undefined> {
-	const manifestText = await readTextFile(manifestPath, diagnostics)
-	if (manifestText === undefined) {
-		diagnostics.add(`router manifest not found: ${manifestPath}`)
+	let manifestText: string
+	try {
+		manifestText = await readFile(manifestPath, "utf8")
+	} catch (error) {
+		if (isMissingFileError(error)) {
+			diagnostics.add(`router manifest not found: ${manifestPath}`)
+		} else {
+			diagnostics.add(`cannot read ${manifestPath}: ${formatError(error)}`)
+		}
 		return undefined
 	}
 
@@ -538,11 +605,7 @@ async function loadManifest(
 		version: typeof parsed.version === "number" ? parsed.version : undefined,
 		projects:
 			typeof parsed.projects === "string" ? parsed.projects : undefined,
-		containers: Array.isArray(parsed.containers)
-			? parsed.containers.filter(
-					(item): item is string => typeof item === "string",
-				)
-			: undefined,
+		containers: parseStringArray(parsed.containers, "containers", diagnostics),
 		permission: isRecord(parsed.permission) ? parsed.permission : undefined,
 	}
 
@@ -557,7 +620,7 @@ async function loadManifest(
 		? resolve(dirname(manifestPath), expandHomePath(manifest.projects))
 		: DEFAULT_PROJECTS_ROOT
 
-	return { ...manifest, manifestPath, projectsRoot }
+	return { ...manifest, projectsRoot }
 }
 
 async function resolveProject(
@@ -579,10 +642,13 @@ async function resolveProject(
 		return undefined
 	}
 
-	const canonicalWorkingDirectory = await canonicalizePath(workingDirectory)
+	const canonicalWorkingDirectory = await canonicalizePath(
+		workingDirectory,
+		diagnostics,
+	)
 	const containerPaths = await Promise.all(
 		(manifest.containers ?? []).map((container) =>
-			canonicalizePath(expandHomePath(container)),
+			canonicalizePath(expandHomePath(container), diagnostics),
 		),
 	)
 
@@ -598,7 +664,6 @@ async function resolveProject(
 
 	if (!bestMatch) return undefined
 	return {
-		name: bestMatch.name,
 		projectDir: join(manifest.projectsRoot, bestMatch.name),
 	}
 }
