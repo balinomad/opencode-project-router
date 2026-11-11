@@ -86,6 +86,50 @@ Linux, macOS, and Windows are supported. Test path handling on each platform whe
 
 Use forward slashes in JSON examples.
 
+### Container smoke test for v1
+
+Use this when no local OpenCode 1.x installation is available. It is a manual check, not part of CI. Run it from the repository root.
+
+The recipe uses the official image and a free model, so no API key is required. Pin the image to the oldest supported 1.x version when verifying compatibility claims.
+
+```bash
+BASE=/tmp/opencode/v1test
+mkdir -p "$BASE/config/opencode/plugin" "$BASE/config/opencode/node_modules" \
+         "$BASE/central/demo" "$BASE/work/demo"
+cp v1/router.ts "$BASE/config/opencode/plugin/router.ts"
+cp -R node_modules/yaml "$BASE/config/opencode/node_modules/yaml"
+
+printf '%s\n' '{"version":1,"projects":"/central","containers":["/work"]}' \
+  > "$BASE/config/opencode/plugin/router.json"
+
+printf '%s\n' '{"$schema":"https://opencode.ai/config.json","model":"opencode/deepseek-v4.1-flash-free","plugin":["./plugin/router.ts"]}' \
+  > "$BASE/config/opencode/opencode.json"
+
+printf '# Demo\n\nROUTER_V1_MARKER\n' > "$BASE/central/demo/AGENTS.md"
+```
+
+```bash
+docker run --rm -u "$(id -u):$(id -g)" \
+  -e HOME=/tmp/home \
+  -e XDG_DATA_HOME=/tmp/data \
+  -e XDG_CACHE_HOME=/tmp/cache \
+  -e XDG_STATE_HOME=/tmp/state \
+  -v "$BASE/config/opencode":/tmp/home/.config/opencode \
+  -v "$BASE/central":/central:ro \
+  -v "$BASE/work":/work \
+  -w /work/demo \
+  --entrypoint opencode \
+  ghcr.io/anomalyco/opencode:1.19.5 \
+  run -m opencode/deepseek-v4.1-flash-free --agent plan \
+  "Do not use tools. Reply with only the marker in your instructions."
+```
+
+Expected output ends with `ROUTER_V1_MARKER`.
+
+If the plugin is not loaded, run `opencode debug config` inside the same container. The output must include `"instructions": ["/central/demo/AGENTS.md"]`.
+
+Run the container as your UID and keep the mounted config directory writable. OpenCode initializes that directory and may fail before loading the plugin if it cannot write there. The `XDG_*` variables keep runtime data out of the read-only home mount. Remove `"$BASE"` after the check.
+
 ## Documentation
 
 - Keep one H1 per Markdown file.
