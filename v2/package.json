@@ -26,6 +26,6 @@
 		"yaml": "^2.9.0"
 	},
 	"devDependencies": {
-		"@opencode/plugin": "2.2.0"
+		"@opencode/plugin": "2.2.6"
 	}
 }
