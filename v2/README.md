@@ -27,6 +27,15 @@ Documentation uses `<config>` for the global OpenCode configuration directory. T
 
 ## Installation
 
+Install from a tagged release. Do not copy files from a moving branch.
+
+```bash
+git clone --branch v1.0.0 --depth 1 https://github.com/balinomad/opencode-project-router.git
+cd opencode-project-router
+```
+
+The copy commands below assume the repository checkout is the current directory.
+
 ### Linux and macOS
 
 1. Copy the `v2/` directory to the global plugins directory.

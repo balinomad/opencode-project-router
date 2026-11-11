@@ -12,6 +12,7 @@ projects/
 coverage/
 dist/
 build/
+.test-dist/
 
 # Local environment files
 .env

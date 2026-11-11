@@ -26,7 +26,8 @@
 	},
 	"workspaces": ["v1", "v2"],
 	"scripts": {
-		"check": "tsc --noEmit"
+		"check": "tsc --noEmit",
+		"test": "esbuild test/v1.test.ts test/v2-config.test.ts test/v2-project.test.ts --bundle --platform=node --format=esm --outdir=.test-dist --external:yaml --log-level=warning && node --test .test-dist"
 	},
 	"devDependencies": {
 		"@types/node": "^22.0.0",

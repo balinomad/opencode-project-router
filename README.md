@@ -48,6 +48,15 @@ Each central project directory can contain `AGENTS.md`, `.opencode/` definitions
 
 ## Quick start
 
+Install from a tagged release. Do not copy files from a moving branch.
+
+```bash
+git clone --branch v1.0.0 --depth 1 https://github.com/balinomad/opencode-project-router.git
+cd opencode-project-router
+```
+
+The copy commands below assume the repository checkout is the current directory.
+
 ### OpenCode 1.x
 
 #### Linux and macOS

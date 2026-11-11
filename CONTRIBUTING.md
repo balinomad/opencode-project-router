@@ -45,6 +45,14 @@ Run the TypeScript check:
 npm run check
 ```
 
+Run the tests:
+
+```bash
+npm test
+```
+
+Tests use the Node.js test runner with `node:test` and `node:assert`. The `test` script bundles the files listed in `package.json` into `.test-dist/`, then `node --test` runs the result. Add new test files to that script. Add coverage for path resolution, manifest parsing, permission rewriting, and central project loading when you change those areas.
+
 Run the bundle checks:
 
 ```bash
@@ -97,6 +105,27 @@ Include:
 - The commands you ran.
 - Platform coverage.
 - Documentation changes.
+
+## Release checklist
+
+Run this only after all changes are merged and verified on `master`.
+
+1. Confirm `npm ci`, `npm run check`, `npm test`, and both bundle checks pass locally.
+2. Confirm the latest `check` workflow run on `master` is green.
+3. Update `CHANGELOG.md`: move entries from `Unreleased` into a dated version section.
+4. Update `package.json` versions in `v1/` and `v2/` if the plugin versions change.
+5. Update the install tag in `README.md`, `v1/README.md`, and `v2/README.md`.
+6. Commit and push the release changes.
+7. Create and push the annotated tag.
+8. Create the GitHub Release from that tag.
+9. Verify the release page and install commands.
+
+```bash
+git tag -a v1.0.0 -m "v1.0.0"
+git push origin v1.0.0
+```
+
+On GitHub, open **Releases**, select **Draft a new release**, choose the pushed tag, set the title to `v1.0.0`, and paste the matching changelog section as the description. Publish the release. Do not move or reuse a published tag.
 
 ## Security
 

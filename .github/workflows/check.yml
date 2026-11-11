@@ -28,6 +28,9 @@ jobs:
       - name: Typecheck
         run: npm run check
 
+      - name: Test
+        run: npm test
+
       - name: Check v1 plugin bundle
         run: npx --no-install esbuild v1/router.ts --bundle --platform=node --format=esm --outfile=/tmp/router-v1.js --external:@opencode-ai/plugin --external:yaml
 

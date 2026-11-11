@@ -81,7 +81,7 @@ function formatError(error: unknown): string {
 	return error instanceof Error ? error.message : String(error)
 }
 
-function parseStringArray(
+export function parseStringArray(
 	value: unknown,
 	field: string,
 	diagnostics: DiagnosticSink,
@@ -104,7 +104,7 @@ function parseStringArray(
 	return result
 }
 
-function expandHomePath(path: string): string {
+export function expandHomePath(path: string): string {
 	return path
 		.replace(/^~(?=$|[\\/])/, homedir())
 		.replace(/\$\{?HOME\}?/g, homedir())
@@ -124,7 +124,7 @@ async function canonicalizePath(
 	}
 }
 
-function isPathInside(parentPath: string, childPath: string): boolean {
+export function isPathInside(parentPath: string, childPath: string): boolean {
 	const relativePath = relative(parentPath, childPath)
 	return (
 		relativePath === "" ||
@@ -187,7 +187,7 @@ function skipComment(text: string, index: number): number | undefined {
 	return undefined
 }
 
-function parseJsonc(
+export function parseJsonc(
 	text: string,
 	path: string,
 	diagnostics: DiagnosticSink,
@@ -323,7 +323,7 @@ async function collectFiles(
 	return files
 }
 
-function mergeValues(base: unknown, value: unknown): unknown {
+export function mergeValues(base: unknown, value: unknown): unknown {
 	if (Array.isArray(base) || Array.isArray(value)) return value
 	if (isRecord(base) && isRecord(value)) {
 		const result: ConfigRecord = { ...base }
@@ -351,7 +351,7 @@ function ensureArray(container: ConfigRecord, key: string): unknown[] {
 	return created
 }
 
-function toAgent(frontmatter: ConfigRecord, systemPrompt: string): ConfigRecord {
+export function toAgent(frontmatter: ConfigRecord, systemPrompt: string): ConfigRecord {
 	const agent: ConfigRecord = { prompt: systemPrompt }
 	const options: ConfigRecord = isRecord(frontmatter.options)
 		? { ...frontmatter.options }
@@ -368,7 +368,7 @@ function toAgent(frontmatter: ConfigRecord, systemPrompt: string): ConfigRecord 
 	return agent
 }
 
-function toCommand(frontmatter: ConfigRecord, template: string): ConfigRecord {
+export function toCommand(frontmatter: ConfigRecord, template: string): ConfigRecord {
 	const command: ConfigRecord = { template }
 	for (const [key, value] of Object.entries(frontmatter)) {
 		if (COMMAND_FIELDS.has(key)) command[key] = value
@@ -381,7 +381,7 @@ function stripFileExtension(path: string): string {
 	return extension ? path.slice(0, -extension.length) : path
 }
 
-function stripPrefixAndExtension(
+export function stripPrefixAndExtension(
 	relativePath: string,
 	prefixes: string[],
 ): string {
@@ -393,7 +393,7 @@ function stripPrefixAndExtension(
 	return stripFileExtension(relativePath)
 }
 
-function relativizePermissionPaths(
+export function relativizePermissionPaths(
 	config: ConfigRecord,
 	projectDir: string,
 ): void {
@@ -420,7 +420,7 @@ function relativizePermissionPaths(
 	}
 }
 
-function expandExternalDirectory(config: ConfigRecord): void {
+export function expandExternalDirectory(config: ConfigRecord): void {
 	const permission = isRecord(config.permission) ? config.permission : undefined
 	if (!permission) return
 	const externalDirectory = isRecord(permission.external_directory)
