@@ -6,6 +6,21 @@ Centralize per-project OpenCode configuration outside project repositories.
 
 OpenCode reads project configuration from the repository tree. This plugin maps the current checkout to a central project directory under the central projects root and loads the configuration from there. The repository stays free of `AGENTS.md`, agents, commands, skills, and references.
 
+## When to use this
+
+- You keep project checkouts under one or more container roots and want their OpenCode configuration in a central directory.
+- You want per-project `AGENTS.md`, agents, commands, skills, and references without committing them to each repository.
+- You want one central project definition to apply to every matching checkout.
+- You need to keep repositories clean for policy, review, or portability reasons.
+
+## When not to use this
+
+- The configuration must travel with the repository for collaborators, CI, or fresh clones.
+- One global OpenCode configuration is enough for every project.
+- You work in a single repository that can own its `AGENTS.md` and `.opencode/` directory.
+- You cannot maintain a stable `router.json` and central projects directory on each machine.
+- You use OpenCode older than 1.18.29 and cannot upgrade. The v1 plugin requires 1.18.29 or newer.
+
 The repository contains two independent plugins:
 
 - `v1/` for OpenCode 1.18.29 and newer 1.x.
